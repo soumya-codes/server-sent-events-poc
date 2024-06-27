@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SSE Demo</title>
+    <style>
+        #logs {
+            width: 100%;
+            height: 300px;
+            overflow-y: scroll;
+            border: 1px solid #ccc;
+            padding: 10px;
+        }
+    </style>
+</head>
+<body>
+<h1>Server-Sent Events Demo</h1>
+<form id="deploymentForm" target="_blank">
+    <button type="submit">Start Deployment</button>
+</form>
+<div id="deploymentId"></div>
+<div id="logs"></div>
+<script>
+    document.getElementById('deploymentForm').addEventListener('submit', async function (event) {
+        event.preventDefault();
+
+        const response = await fetch('/deployment', { method: 'POST' });
+        const data = await response.json();
+
+        const newWindow = window.open('', '_blank');
+
+        // Construct HTML content with title and deployment ID
+        const newWindowContent = `
+            <!DOCTYPE html>
+            <html lang="en">
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Deployment Logs</title>
+                <style>
+                    #logs {
+                        width: 90%;
+                        height: 800px;
+                        overflow-y: scroll;
+                        border: 1px solid #ccc;
+                        padding: 10px;
+                    }
+                </style>
+            </head>
+            <body>
+                <h1>Deployment Logs</h1>
+                <div id="deploymentId">Deployment ID: ${data.deployment_id}</div>
+                <div id="logs"></div>
+                <script>
+                    const eventSource = new EventSource('/logs/' + '${data.deployment_id}');
+                    let clientIdHeaderValue = '';
+
+                    eventSource.onopen = function(event) {
+                        clientIdHeaderValue = eventSource.url.split('=')[1];  // Extract client ID from the URL
+
+                        // Send a ping every 15 seconds to keep the connection alive
+                        setInterval(function() {
+                            fetch('/ping', {
+                                method: 'POST',
+                                headers: {
+                                    'X-Client-ID': clientIdHeaderValue
+                                }
+                            });
+                        }, 15000);
+                    };
+
+                    eventSource.onmessage = function(event) {
+                        const logsElement = document.getElementById('logs');
+                        const newLog = document.createElement('p');
+                        newLog.textContent = event.data;
+                        logsElement.prepend(newLog);
+                    };
+
+                    eventSource.addEventListener('termination', function(event) {
+                        alert('Server is shutting down.');
+                        eventSource.close();
+                    });
+
+                    eventSource.addEventListener('inactivity', function(event) {
+                        alert('Server closed connection due to inactivity.');
+                        eventSource.close();
+                    });
+
+                    window.onbeforeunload = function() {
+                        fetch('/disconnect', {
+                            method: 'POST',
+                            headers: {
+                                'X-Client-ID': clientIdHeaderValue
+                            }
+                        });
+                    };
+                <\/script>
+            </body>
+            </html>
+        `;
+
+        newWindow.document.open();
+        newWindow.document.write(newWindowContent);
+        newWindow.document.close();
+    });
+</script>
+</body>
+</html>
